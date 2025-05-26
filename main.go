@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"log"
 	"os"
 )
 
@@ -10,6 +11,18 @@ type Config struct {
 	InputFile  string
 	OutputFile string
 	Language   string
+}
+
+func (config *Config) Validate() error {
+	if config.InputFile == "" {
+		return fmt.Errorf("no input file specified (flag -input is required)")
+	}
+
+	if config.Language != "go" {
+		return fmt.Errorf("unsupported language: %s", config.Language)
+	}
+
+	return nil
 }
 
 func DoesFileExist(path string) (found bool, err error) {
@@ -41,6 +54,11 @@ func ParseFlags() Config {
 func main() {
 	// CLI initialisation
 	config := ParseFlags()
+
+	// Flag validation
+	if err := config.Validate(); err != nil {
+		log.Fatalf("Invalid configuration: %s", err)
+	}
 
 	// Input file existence check
 	fileExists, err := DoesFileExist(config.InputFile)
