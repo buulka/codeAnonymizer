@@ -6,7 +6,13 @@ import (
 	"os"
 )
 
-func doesFileExist(path string) (found bool, err error) {
+type Config struct {
+	InputFile  string
+	OutputFile string
+	Language   string
+}
+
+func DoesFileExist(path string) (found bool, err error) {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			err = nil
@@ -17,27 +23,30 @@ func doesFileExist(path string) (found bool, err error) {
 	return
 }
 
-func initCLI() (*string, *string, *string) {
-	input := flag.String("input", "input.go", "an input file path")
-	output := flag.String("output", "output.go", "an output file path")
-	lang := flag.String("lang", "go", "file language")
+func ParseFlags() Config {
+	var config Config
+
+	flag.StringVar(&config.InputFile, "input", "input.go", "an input file path")
+	flag.StringVar(&config.OutputFile, "output", "output.go", "an output file path")
+	flag.StringVar(&config.Language, "lang", "go", "file language")
 
 	flag.Parse()
 
 	fmt.Println("Args:")
-	fmt.Println("\tinput file:", *input, "\n\toutput file:", *output, "\n\tlang:", *lang)
+	fmt.Println("\tinput file:", config.InputFile, "\n\toutput file:", config.OutputFile, "\n\tlang:", config.Language)
 
-	return input, output, lang
+	return config
 }
+
 func main() {
 	// CLI initialisation
-	input, _, _ := initCLI()
+	config := ParseFlags()
 
 	// Input file existence check
-	fileExists, err := doesFileExist(*input)
+	fileExists, err := DoesFileExist(config.InputFile)
 	if err != nil {
 		panic(err)
 	}
 
-	fmt.Println("\nInput file", *input, "exists:", fileExists)
+	fmt.Println("\nInput file", config.InputFile, "exists:", fileExists)
 }
