@@ -5,13 +5,15 @@ import (
 	"github.com/spf13/cobra"
 	"log"
 	"os"
+	"strings"
 )
 
 type Config struct {
-	InputFile    string
-	OutputFile   string
-	Language     string
-	KeepComments bool
+	InputFile      string
+	OutputFile     string
+	Language       string
+	NormalizedLang string
+	KeepComments   bool
 }
 
 func DoesFileExist(path string) (found bool, err error) {
@@ -25,6 +27,29 @@ func DoesFileExist(path string) (found bool, err error) {
 	return
 }
 
+func ValidateLanguage(language string) (normalized string, err error) {
+	var allowedLanguages = map[string]string{
+		"go":     "go",
+		"golang": "go"}
+
+	key := strings.ToLower(strings.TrimSpace(language))
+	normalized, ok := allowedLanguages[key]
+
+	if !ok {
+		return "", fmt.Errorf("unsupported language: %s", language)
+	}
+	return normalized, nil
+}
+
+func Validate(config *Config) error {
+	NormalizedLang, err := ValidateLanguage(config.Language)
+	if err != nil {
+		log.Fatalf("Language error: %v", err)
+	}
+	config.NormalizedLang = NormalizedLang
+	return nil
+}
+
 var AnonymizeCmd = &cobra.Command{
 	Use:   "anonymize",
 	Short: "Anonymize source code by replacing identifiers",
@@ -36,16 +61,17 @@ var AnonymizeCmd = &cobra.Command{
 			Language:     cmd.Flag("language").Value.String(),
 			KeepComments: cmd.Flag("keep-comments").Changed}
 
-		if cfg.Language != "go" {
-			log.Fatalf("Unsupported language: %s", cfg.Language)
+		if err := Validate(&cfg); err != nil {
+			log.Fatalf("Configuration error: %v", err)
 		}
+		fmt.Println(cfg.NormalizedLang)
 
 		// Input file existence check
 		fileExists, err := DoesFileExist(cfg.InputFile)
 		if err != nil {
 			panic(err)
 		}
-		fmt.Println("\nInput file", cfg.InputFile, "exists:", fileExists)
+		fmt.Println("\nInput file", cfg.InputFile, "exists:", fileExists, "\nLang:", cfg.NormalizedLang)
 
 	},
 }
