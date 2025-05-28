@@ -2,12 +2,13 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/spf13/cobra"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/spf13/cobra"
 )
 
 type Config struct {
@@ -18,7 +19,13 @@ type Config struct {
 	KeepComments   bool
 }
 
-func FileExists(path string) (exists bool, err error) {
+type FileValidator struct{}
+
+func NewFileValidator() *FileValidator {
+	return &FileValidator{}
+}
+
+func (fv *FileValidator) FileExists(path string) (exists bool, err error) {
 	if _, err := os.Stat(path); err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
@@ -28,12 +35,12 @@ func FileExists(path string) (exists bool, err error) {
 	return true, nil
 }
 
-func IsGoFile(path string) bool {
+func (fv *FileValidator) IsGoFile(path string) bool {
 	ext := filepath.Ext(path)
 	return ext == ".go"
 }
 
-func IsBinaryFile(path string) (isGo bool, err error) {
+func (fv *FileValidator) IsBinaryFile(path string) (isGo bool, err error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return false, err
@@ -53,7 +60,7 @@ func IsBinaryFile(path string) (isGo bool, err error) {
 	return !utf8.Valid(buf), nil
 }
 
-func IsFileEmpty(path string) (isEmpty bool, err error) {
+func (fv *FileValidator) IsFileEmpty(path string) (isEmpty bool, err error) {
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		return false, err
@@ -61,9 +68,9 @@ func IsFileEmpty(path string) (isEmpty bool, err error) {
 	return fileInfo.Size() == 0, nil
 }
 
-func ValidateGoFile(path string) (err error) {
+func (fv *FileValidator) ValidateGoFile(path string) (err error) {
 	// Input file existence check
-	exists, err := FileExists(path)
+	exists, err := fv.FileExists(path)
 	if err != nil {
 		return fmt.Errorf("file check failed: %v", err)
 	}
@@ -72,47 +79,67 @@ func ValidateGoFile(path string) (err error) {
 	}
 
 	// Input file type check
-	if !IsGoFile(path) {
+	if !fv.IsGoFile(path) {
 		return fmt.Errorf("file %s is not a .go file", path)
 	}
 
 	// Empty file validation
-	if empty, err := IsFileEmpty(path); err != nil {
+	if empty, err := fv.IsFileEmpty(path); err != nil {
 		return fmt.Errorf("failed to check file size: %w", err)
 	} else if empty {
 		return fmt.Errorf("file is empty: %s", path)
 	}
 
 	// Check if binary
-	if isBinary, err := IsBinaryFile(path); err == nil && isBinary {
+	if isBinary, err := fv.IsBinaryFile(path); err == nil && isBinary {
 		return fmt.Errorf("file appears to be binary: %s", path)
 	}
 
 	return nil
 }
 
-func ValidateLanguage(language string) (normalized string, err error) {
-	var allowedLanguages = map[string]string{
-		"go":     "go",
-		"golang": "go"}
+type LanguageValidator struct {
+	allowedLanguages map[string]string
+}
 
+func NewLanguageValidator() *LanguageValidator {
+	return &LanguageValidator{
+		allowedLanguages: map[string]string{
+			"go":     "go",
+			"golang": "go",
+		},
+	}
+}
+
+func (lv *LanguageValidator) ValidateLanguage(language string) (string, error) {
 	key := strings.ToLower(strings.TrimSpace(language))
-	normalized, ok := allowedLanguages[key]
-
+	normalized, ok := lv.allowedLanguages[key]
 	if !ok {
 		return "", fmt.Errorf("unsupported language: %s", language)
 	}
 	return normalized, nil
 }
 
-func Validate(config *Config) error {
-	NormalizedLang, err := ValidateLanguage(config.Language)
+type ConfigValidator struct {
+	fileValidator     *FileValidator
+	languageValidator *LanguageValidator
+}
+
+func NewConfigValidator() *ConfigValidator {
+	return &ConfigValidator{
+		fileValidator:     NewFileValidator(),
+		languageValidator: NewLanguageValidator(),
+	}
+}
+
+func (cv *ConfigValidator) Validate(config *Config) error {
+	NormalizedLang, err := cv.languageValidator.ValidateLanguage(config.Language)
 	if err != nil {
 		log.Fatalf("Language error: %v", err)
 	}
 	config.NormalizedLang = NormalizedLang
 
-	err = ValidateGoFile(config.InputFile)
+	err = cv.fileValidator.ValidateGoFile(config.InputFile)
 	if err != nil {
 		log.Fatalf("Input file type error: %v", err)
 	}
@@ -131,7 +158,8 @@ var AnonymizeCmd = &cobra.Command{
 			Language:     cmd.Flag("language").Value.String(),
 			KeepComments: cmd.Flag("keep-comments").Changed}
 
-		if err := Validate(&cfg); err != nil {
+		validator := NewConfigValidator()
+		if err := validator.Validate(&cfg); err != nil {
 			log.Fatalf("Configuration error: %v", err)
 		}
 		fmt.Println(cfg.NormalizedLang)
@@ -146,9 +174,8 @@ func init() {
 	AnonymizeCmd.Flags().StringP("language", "l", "go", "Language to use")
 	AnonymizeCmd.Flags().BoolP("keep-comments", "k", false, "Keep comments")
 
-	err := AnonymizeCmd.MarkFlagRequired("input")
-	if err != nil {
-		return
+	if err := AnonymizeCmd.MarkFlagRequired("input"); err != nil {
+		log.Printf("failed to mark input flag as required: %v", err)
 	}
 
 }
